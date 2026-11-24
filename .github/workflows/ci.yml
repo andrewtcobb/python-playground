@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run ty check
+      - name: Test
+        run: uv run pytest
+
+  image:
+    needs: check
+    # Fork PRs get a read-only token and can't push to GHCR.
+    if: github.event.pull_request.head.repo.fork != true
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      # For PRs, tag the PR's own head commit rather than the temporary merge commit.
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      tag: ${{ github.event.pull_request.head.sha || github.sha }}
